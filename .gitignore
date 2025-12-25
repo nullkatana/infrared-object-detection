@@ -26,3 +26,9 @@ log/
 # OS
 .DS_Store
 Thumbs.db
+
+# Data files
+data/*.db3
+data/*.bag
+data/recording_*
+*.csv
