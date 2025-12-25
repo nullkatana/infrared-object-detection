@@ -3,8 +3,10 @@
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import PointCloud2, PointField
+from std_msgs.msg import String
 import numpy as np
 import struct
+import json
 
 
 class PointCloudGenerator(Node):
@@ -30,6 +32,15 @@ class PointCloudGenerator(Node):
         # Object properties
         self.object_position = np.array([1.5, 0.0, 0.5])  # [x, y, z]
         self.object_size = 0.5  # meters
+
+        # Subscribe to shared object state
+        self.state_subscription = self.create_subscription(
+            String,
+            'object/state',
+            self.state_callback,
+            10
+        )
+        self.object_present = True
         
         self.get_logger().info('Point Cloud Generator started!')
         self.get_logger().info(f'Scene size: {self.scene_width}x{self.scene_depth}x{self.scene_height}m')
@@ -97,21 +108,28 @@ class PointCloudGenerator(Node):
         """Generate and publish a complete point cloud scene"""
         # Generate different components of the scene
         ground = self.generate_ground_plane(num_points=500)
-        obj = self.generate_object(self.object_position, self.object_size, num_points=200)
         noise = self.generate_noise_points(num_points=50)
         
-        # Combine all points
-        all_points = np.vstack([ground, obj, noise])
+        # Only generate object if present
+        if self.object_present:
+            obj = self.generate_object(self.object_position, self.object_size, num_points=200)
+            all_points = np.vstack([ground, obj, noise])
+        else:
+            all_points = np.vstack([ground, noise])
         
         # Create and publish message
         msg = self.create_pointcloud2_msg(all_points)
         self.publisher.publish(msg)
-        
-        # Occasionally move the object (for testing)
-        if np.random.random() < 0.05:  # 5% chance
-            self.object_position[0] = np.random.uniform(0.5, 3.0)
-            self.object_position[1] = np.random.uniform(-1.0, 1.0)
-            self.get_logger().info(f'Object moved to position: [{self.object_position[0]:.2f}, {self.object_position[1]:.2f}, {self.object_position[2]:.2f}]')
+
+    def state_callback(self, msg):
+        """Receive shared object state"""
+        try:
+            state = json.loads(msg.data)
+            self.object_present = state['present']
+            if self.object_present:
+                self.object_position = np.array(state['position'])
+        except json.JSONDecodeError:
+            pass
 
 
 def main(args=None):

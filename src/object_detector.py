@@ -7,6 +7,7 @@ from std_msgs.msg import String
 import numpy as np
 import struct
 import json
+from sklearn.cluster import DBSCAN
 
 
 class ObjectDetector(Node):
@@ -45,8 +46,12 @@ class ObjectDetector(Node):
         self.latest_pointcloud = None
         
         # Detection parameters
-        self.detection_threshold = 0.3  # meters - minimum object size
+        self.detection_threshold = 0.2  # meters - minimum object size
         self.ir_detection_range = 2.5  # meters - max distance to trust IR
+        
+        # DBSCAN clustering parameters
+        self.dbscan_eps = 0.35  # Maximum distance between points in a cluster (meters)
+        self.dbscan_min_samples = 8  # Minimum points to form a cluster
         
         # Timer for periodic detection
         self.detection_timer = self.create_timer(0.5, self.perform_detection)
@@ -75,43 +80,50 @@ class ObjectDetector(Node):
         return np.array(points)
     
     def detect_objects_in_pointcloud(self, points):
-        """Simple clustering-based object detection in point cloud"""
+        """DBSCAN-based object detection in point cloud"""
         if len(points) == 0:
             return []
         
         # Filter points that are above ground (z > 0.1m)
         elevated_points = points[points[:, 2] > 0.1]
         
-        if len(elevated_points) == 0:
+        if len(elevated_points) < self.dbscan_min_samples:
             return []
         
-        # Simple object detection: cluster points by proximity
+        # Apply DBSCAN clustering
+        try:
+            clustering = DBSCAN(eps=self.dbscan_eps, min_samples=self.dbscan_min_samples)
+            labels = clustering.fit_predict(elevated_points)
+        except Exception as e:
+            self.get_logger().warn(f'DBSCAN failed: {e}')
+            return []
+        
+        # Find unique clusters (excluding noise labeled as -1)
+        unique_labels = set(labels)
+        if -1 in unique_labels:
+            unique_labels.remove(-1)  # Remove noise label
+        
         detections = []
         
-        # Find points in detection zone (within IR range)
-        if self.latest_ir_range and self.latest_ir_range < self.ir_detection_range:
-            # Focus on area where IR detected something
-            ir_zone = elevated_points[
-                (elevated_points[:, 0] > self.latest_ir_range - 0.5) &
-                (elevated_points[:, 0] < self.latest_ir_range + 0.5)
-            ]
+        for label in unique_labels:
+            # Get points belonging to this cluster
+            cluster_points = elevated_points[labels == label]
             
-            if len(ir_zone) > 20:  # Minimum points to be an object
-                # Calculate object centroid
-                centroid = np.mean(ir_zone, axis=0)
-                size = np.max(ir_zone, axis=0) - np.min(ir_zone, axis=0)
-                
-                # Calculate volume
-                volume = size[0] * size[1] * size[2]
-                
-                if volume > self.detection_threshold:
-                    detections.append({
-                        'position': centroid.tolist(),
-                        'size': size.tolist(),
-                        'volume': float(volume),
-                        'num_points': len(ir_zone),
-                        'distance': float(centroid[0])
-                    })
+            # Calculate object properties
+            centroid = np.mean(cluster_points, axis=0)
+            size = np.max(cluster_points, axis=0) - np.min(cluster_points, axis=0)
+            volume = size[0] * size[1] * size[2]
+            
+            # Only report if volume is above threshold
+            if volume > self.detection_threshold:
+                detections.append({
+                    'cluster_id': int(label),
+                    'position': centroid.tolist(),
+                    'size': size.tolist(),
+                    'volume': float(volume),
+                    'num_points': len(cluster_points),
+                    'distance': float(centroid[0])
+                })
         
         return detections
     

@@ -41,6 +41,10 @@ trap cleanup EXIT INT TERM
 
 # Start all nodes in background
 echo ""
+echo "Starting Shared Object State..."
+python3 src/shared_object_state.py &
+PID_STATE=$!
+
 echo "Starting IR Sensor Simulator..."
 python3 src/ir_sensor_simulator.py &
 PID_IR=$!
@@ -57,10 +61,6 @@ echo "Starting TF Broadcaster..."
 python3 src/tf_broadcaster.py &
 PID_TF=$!
 
-echo "Starting Metrics Logger..."
-python3 src/metrics_logger.py &
-PID_METRICS=$!
-
 # Wait a moment for nodes to start
 sleep 2
 
@@ -70,11 +70,11 @@ echo "  All nodes started successfully!"
 echo "================================================"
 echo ""
 echo "Running processes:"
+echo "  - Shared Object State (PID: $PID_STATE)"
 echo "  - IR Sensor (PID: $PID_IR)"
 echo "  - Point Cloud Generator (PID: $PID_PC)"
 echo "  - Object Detector (PID: $PID_DETECTOR)"
 echo "  - TF Broadcaster (PID: $PID_TF)"
-echo "  - Metrics Logger (PID: $PID_METRICS)"
 echo ""
 echo "To visualize, run in another terminal:"
 echo "  cd ~/infrared_object_detection"

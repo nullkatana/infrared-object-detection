@@ -3,8 +3,10 @@
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Range
+from std_msgs.msg import String
 import numpy as np
 import random
+import json
 
 
 class IRSensorSimulator(Node):
@@ -21,6 +23,14 @@ class IRSensorSimulator(Node):
         
         # Timer to publish sensor data at 10 Hz
         self.timer = self.create_timer(0.1, self.publish_sensor_data)
+
+        # Subscribe to shared object state
+        self.state_subscription = self.create_subscription(
+            String,
+            'object/state',
+            self.state_callback,
+            10
+        )
         
         # Simulation parameters
         self.min_range = 0.1  # meters
@@ -64,15 +74,17 @@ class IRSensorSimulator(Node):
         # Publish the message
         self.publisher.publish(msg)
         
-        # Occasionally move the object or make it disappear (for testing)
-        if random.random() < 0.01:  # 1% chance per reading
-            self.object_distance = random.uniform(0.5, 2.5)
-            self.object_present = random.choice([True, True, True, False])  # 75% present
-            
+    def state_callback(self, msg):
+        """Receive shared object state"""
+        try:
+            state = json.loads(msg.data)
+            self.object_present = state['present']
             if self.object_present:
-                self.get_logger().info(f'Object moved to {self.object_distance:.2f}m')
-            else:
-                self.get_logger().info('Object disappeared')
+                # Calculate distance from sensor (at origin) to object
+                position = np.array(state['position'])
+                self.object_distance = position[0]  # X-distance (sensor points along X)
+        except json.JSONDecodeError:
+            pass
 
 
 def main(args=None):

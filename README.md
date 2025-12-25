@@ -7,39 +7,51 @@ This project implements a ROS 2-based sensor fusion system that combines infrare
 **Key Features:**
 - Simulated IR distance sensor with realistic noise
 - 3D point cloud scene generation
-- Multi-sensor fusion for object detection
+- Multi-sensor fusion for object detection with DBSCAN clustering
 - Real-time visualization in RViz2
 - Modular ROS 2 node architecture
+- Performance metrics tracking and logging
+- Data recording and playback (ROS bag support)
+- Synchronized sensor simulation
 
 ## Project Structure
+
 ```
 infrared_object_detection/
 ├── venv/                      # Python virtual environment
 ├── src/                       # Source code for ROS 2 nodes
 │   ├── ir_sensor_simulator.py       # IR distance sensor simulation
 │   ├── pointcloud_generator.py      # 3D point cloud generation
-│   ├── object_detector.py           # Sensor fusion and detection
-│   └── tf_broadcaster.py            # TF transforms for visualization
+│   ├── object_detector.py           # Sensor fusion and detection (DBSCAN)
+│   ├── tf_broadcaster.py            # TF transforms for visualization
+│   ├── shared_object_state.py       # Shared state for sensor synchronization
+│   └── metrics_logger.py            # Performance metrics tracking
 ├── notebooks/                 # Jupyter notebooks for analysis (demonstration examples)
 ├── data/                      # Reserved for recorded sensor data (currently empty)
 ├── docs/                      # Reserved for additional documentation (currently empty)
+├── .gitignore                 # Git ignore file
 ├── LICENSE                    # MIT License
+├── README.md                  # This file
 ├── requirements.txt           # Python dependencies
 ├── start_system.sh            # Launch script for all nodes
-└── README.md                  # This file
+├── record_data.sh             # Script to record sensor data to ROS bag
+└── playback_data.sh           # Script to replay recorded data
 ```
 
 ## System Architecture
 
-The system consists of four independent ROS 2 nodes that communicate via topics:
+The system consists of six independent ROS 2 nodes that communicate via topics:
 
-1. **IR Sensor Simulator** - Publishes simulated distance measurements
-2. **Point Cloud Generator** - Creates 3D scenes with detectable objects
-3. **Object Detector** - Fuses both sensor streams to detect objects
-4. **TF Broadcaster** - Provides coordinate frame transforms
+1. **Shared Object State** - Publishes synchronized object position for all sensors
+2. **IR Sensor Simulator** - Subscribes to object state, publishes distance measurements
+3. **Point Cloud Generator** - Subscribes to object state, creates 3D scenes
+4. **Object Detector** - Fuses sensor streams using DBSCAN clustering
+5. **TF Broadcaster** - Provides coordinate frame transforms
+6. **Metrics Logger** - Tracks and logs detection performance
 
 ### ROS 2 Topics
 
+- `/object/state` (std_msgs/String) - Shared object state (position, presence)
 - `/ir_sensor/range` (sensor_msgs/Range) - IR distance measurements
 - `/pointcloud/scene` (sensor_msgs/PointCloud2) - 3D point cloud data
 - `/detections/objects` (std_msgs/String) - JSON-formatted detection results
@@ -104,7 +116,7 @@ source venv/bin/activate
 
 # Install Python dependencies
 pip install --upgrade pip
-pip install numpy matplotlib open3d scipy transforms3d
+pip install -r requirements.txt
 ```
 
 ### 4. Copy Project Files
@@ -117,31 +129,7 @@ chmod +x src/*.py
 
 ## Usage
 
-### Easy Start - Using Launch Script (Recommended)
-
-**Start all nodes with one command:**
-```bash
-cd ~/infrared_object_detection
-./start_system.sh
-```
-
-This automatically starts all 4 nodes (IR sensor, point cloud generator, object detector, TF broadcaster).
-
-**Then open RViz2 in a separate terminal:**
-```bash
-cd ~/infrared_object_detection
-source venv/bin/activate
-source /opt/ros/humble/setup.bash
-rviz2
-```
-
-**To stop all nodes:** Press `Ctrl+C` in the terminal running `start_system.sh`
-
----
-
-### Manual Start - Running Nodes Individually
-
-If you prefer to run nodes separately for debugging:
+### Quick Start - Running All Nodes
 
 Open 5 separate terminals in VSCode (or your terminal emulator) and run the following commands:
 
@@ -227,6 +215,37 @@ ros2 topic list
 ros2 topic info /detections/objects
 ```
 
+### Recording and Playing Back Data
+
+**Record sensor data:**
+```bash
+cd ~/infrared_object_detection
+./record_data.sh
+```
+
+This records IR sensor, point cloud, and detection data to a timestamped bag file in the `data/` directory. Press `Ctrl+C` to stop recording.
+
+**Play back recorded data:**
+```bash
+./playback_data.sh data/recording_YYYYMMDD_HHMMSS
+```
+
+This replays the recorded sensor data. You can run detection nodes or RViz2 while playing back to analyze the data offline.
+
+### Viewing Performance Metrics
+
+Metrics are automatically logged to `data/metrics_log.csv` when the system runs. View the log:
+
+```bash
+cat data/metrics_log.csv
+```
+
+The metrics include:
+- Detection rate (Hz)
+- Total detections
+- Average objects per detection
+- System uptime
+
 ## How It Works
 
 ### Sensor Simulation
@@ -247,16 +266,23 @@ ros2 topic info /detections/objects
 
 ### Object Detection Algorithm
 
-The detector uses a simple clustering approach:
+The detector uses DBSCAN (Density-Based Spatial Clustering) for robust object detection:
 
 1. Filters point cloud to remove ground plane (z > 0.1m)
-2. Uses IR range to focus on regions of interest
-3. Clusters elevated points within IR detection zone
-4. Calculates object properties:
+2. Applies DBSCAN clustering to elevated points
+3. Groups nearby points into object clusters
+4. Calculates object properties for each cluster:
+   - Cluster ID
    - Centroid position (X, Y, Z)
    - Bounding box size
    - Volume estimation
    - Point count
+   - Distance from sensor
+
+**DBSCAN Parameters:**
+- `eps = 0.35m` - Maximum distance between points in a cluster
+- `min_samples = 8` - Minimum points required to form a cluster
+- `volume_threshold = 0.02m³` - Minimum object volume to report
 
 ### Transform (TF) Broadcasting
 
@@ -264,24 +290,38 @@ The TF broadcaster establishes the coordinate frame relationship between `world`
 
 ## Technical Notes
 
-### Independent Simulations
+### Sensor Synchronization (v1.1)
 
-The IR sensor and point cloud generator run **independent simulations** - each has its own object at potentially different positions. This is intentional:
+As of version 1.1, the IR sensor and point cloud generator are **synchronized** - they share the same object state through the `/object/state` topic. This means:
 
-- Tests the detector's ability to fuse imperfect sensor data
-- Mimics real-world scenarios where sensors disagree
-- Demonstrates robustness to sensor noise and misalignment
+- Both sensors detect the same object at the same position
+- IR sensor cone in RViz2 points at the visible object
+- More realistic sensor fusion demonstration
+- Better for testing and validating detection algorithms
 
-In a production system, you would either:
-- Use real sensors measuring the same environment
-- Synchronize simulated sensors to share object positions
+The shared object state includes:
+- Object presence (visible/hidden)
+- 3D position (X, Y, Z)
+- Object size
+- Timestamp
+
+### Performance Tracking (v1.1)
+
+The metrics logger tracks system performance in real-time:
+- Detection rate and frequency
+- Total objects detected
+- Average detections per cycle
+- System uptime
+- All metrics logged to CSV for offline analysis
 
 ### Performance
 
+- Shared Object State: 1 Hz update rate
 - IR Sensor: 10 Hz update rate
 - Point Cloud: 5 Hz update rate
 - Object Detector: 2 Hz processing rate
 - TF Broadcaster: 10 Hz broadcast rate
+- Metrics Logger: 0.2 Hz (every 5 seconds)
 
 ## Troubleshooting
 
@@ -308,12 +348,12 @@ In a production system, you would either:
 
 Potential improvements and extensions:
 
-- [ ] Synchronized sensor simulations
-- [ ] More sophisticated clustering algorithms (DBSCAN, k-means)
+- [x] Synchronized sensor simulations (v1.1)
+- [x] DBSCAN clustering algorithm (v1.1)
+- [x] Data recording and playback with ROS bags (v1.1)
+- [x] Performance metrics and logging (v1.1)
 - [ ] Object tracking over time (Kalman filtering)
-- [ ] Multiple object detection
-- [ ] Data recording and playback (ROS bag files)
-- [ ] Performance metrics and evaluation
+- [ ] Multiple simultaneous object detection
 - [ ] Machine learning-based detection
 - [ ] Integration with real hardware sensors
 
