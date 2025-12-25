@@ -117,7 +117,31 @@ chmod +x src/*.py
 
 ## Usage
 
-### Quick Start - Running All Nodes
+### Easy Start - Using Launch Script (Recommended)
+
+**Start all nodes with one command:**
+```bash
+cd ~/infrared_object_detection
+./start_system.sh
+```
+
+This automatically starts all 4 nodes (IR sensor, point cloud generator, object detector, TF broadcaster).
+
+**Then open RViz2 in a separate terminal:**
+```bash
+cd ~/infrared_object_detection
+source venv/bin/activate
+source /opt/ros/humble/setup.bash
+rviz2
+```
+
+**To stop all nodes:** Press `Ctrl+C` in the terminal running `start_system.sh`
+
+---
+
+### Manual Start - Running Nodes Individually
+
+If you prefer to run nodes separately for debugging:
 
 Open 5 separate terminals in VSCode (or your terminal emulator) and run the following commands:
 
