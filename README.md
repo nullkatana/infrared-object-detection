@@ -15,6 +15,34 @@ This project implements a ROS 2-based sensor fusion system that combines infrare
 - Data recording and playback (ROS bag support)
 - Synchronized sensor simulation
 
+## Demo
+
+### System Startup
+![Terminal with all nodes starting](images/terminal.png)
+*All 12 nodes launching with synchronized sensors*
+
+### Topic List
+![Output showing all topics](images/ros2_topics.png)
+*ROS2 topics for 4 sensors + point cloud data*
+
+### Multi-Sensor Visualization
+
+#### NIR + IR Sensors
+![NIR(Pink) + IR Sensor(Cyan) + Point Cloud Generator in RViz2](images/nir_ir_pcg.png)
+*Infrared distance sensors with point cloud scene*
+
+#### ToF + LiDAR
+![ToF + LiDAR + Point Cloud Generator in RViz2](images/tof_lidar_pcg.png)
+*8x8 ToF depth grid and 360° LiDAR scan*
+
+### System in Action
+![Tracking in RViz2](images/tracking.png)
+*Real-time Kalman filter tracking with trajectory prediction*
+
+### Fusion Results
+![Detection JSON output](images/fusion_output.png)
+*Multi-sensor fusion with weighted confidence scoring*
+
 ## Project Structure
 
 ```
