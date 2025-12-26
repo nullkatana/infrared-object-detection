@@ -25,13 +25,15 @@ class SharedObjectState(Node):
         
         # Object parameters
         self.object_position = np.array([1.5, 0.0, 0.5])  # [x, y, z] in meters
+        self.object_velocity = np.array([0.0, 0.0, 0.0])  # Current velocity
         self.object_size = 0.5  # meters
         self.object_present = True
         
         # Movement parameters
         self.min_distance = 0.5
         self.max_distance = 2.5
-        self.move_probability = 0.15  # 15% chance to move per second
+        self.max_speed = 0.3  # Maximum speed in m/s
+        self.change_direction_probability = 0.1  # 10% chance to change direction per second
         self.disappear_probability = 0.05  # 5% chance to disappear
         
         self.get_logger().info('Shared Object State publisher started!')
@@ -48,17 +50,37 @@ class SharedObjectState(Node):
             else:
                 self.get_logger().info('Object disappeared')
         
-        # Randomly move object if present
-        if self.object_present and np.random.random() < self.move_probability:
-            # Move to new position
-            self.object_position[0] = np.random.uniform(self.min_distance, self.max_distance)
-            self.object_position[1] = np.random.uniform(-1.0, 1.0)
-            self.object_position[2] = np.random.uniform(0.3, 0.7)
+        # Update object movement if present
+        if self.object_present:
+            # Randomly change direction
+            if np.random.random() < self.change_direction_probability:
+                # Generate new random velocity
+                self.object_velocity = np.array([
+                    np.random.uniform(-self.max_speed, self.max_speed),
+                    np.random.uniform(-self.max_speed, self.max_speed),
+                    0.0  # Keep Z velocity at 0 (no vertical movement)
+                ])
+                
+                speed = np.linalg.norm(self.object_velocity)
+                if speed > 0.01:
+                    self.get_logger().info(
+                        f'Object velocity changed: speed={speed:.2f}m/s'
+                    )
             
-            self.get_logger().info(
-                f'Object moved to: [{self.object_position[0]:.2f}, '
-                f'{self.object_position[1]:.2f}, {self.object_position[2]:.2f}]'
-            )
+            # Update position based on velocity
+            dt = 1.0  # Time step (1 second)
+            self.object_position += self.object_velocity * dt
+            
+            # Clamp position to valid range
+            self.object_position[0] = np.clip(self.object_position[0], self.min_distance, self.max_distance)
+            self.object_position[1] = np.clip(self.object_position[1], -1.5, 1.5)
+            self.object_position[2] = np.clip(self.object_position[2], 0.3, 0.7)
+            
+            # Bounce off boundaries (reverse velocity if hit wall)
+            if self.object_position[0] <= self.min_distance or self.object_position[0] >= self.max_distance:
+                self.object_velocity[0] *= -1
+            if self.object_position[1] <= -1.5 or self.object_position[1] >= 1.5:
+                self.object_velocity[1] *= -1
         
         # Create state message
         state = {

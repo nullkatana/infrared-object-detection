@@ -61,6 +61,18 @@ echo "Starting TF Broadcaster..."
 python3 src/tf_broadcaster.py &
 PID_TF=$!
 
+echo "Starting Metrics Logger..."
+python3 src/metrics_logger.py &
+PID_METRICS=$!
+
+echo "Starting Object Tracker..."
+python3 src/object_tracker.py &
+PID_TRACKER=$!
+
+echo "Starting Trajectory Visualizer..."
+python3 src/trajectory_visualizer.py &
+PID_VIZ=$!
+
 # Wait a moment for nodes to start
 sleep 2
 
@@ -75,6 +87,9 @@ echo "  - IR Sensor (PID: $PID_IR)"
 echo "  - Point Cloud Generator (PID: $PID_PC)"
 echo "  - Object Detector (PID: $PID_DETECTOR)"
 echo "  - TF Broadcaster (PID: $PID_TF)"
+echo "  - Metrics Logger (PID: $PID_METRICS)"
+echo "  - Object Tracker (PID: $PID_TRACKER)"
+echo "  - Trajectory Visualizer (PID: $PID_VIZ)"
 echo ""
 echo "To visualize, run in another terminal:"
 echo "  cd ~/infrared_object_detection"

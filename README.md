@@ -8,16 +8,12 @@ This project implements a ROS 2-based sensor fusion system that combines infrare
 - Simulated IR distance sensor with realistic noise
 - 3D point cloud scene generation
 - Multi-sensor fusion for object detection with DBSCAN clustering
+- Kalman filter-based object tracking with velocity estimation
 - Real-time visualization in RViz2
 - Modular ROS 2 node architecture
 - Performance metrics tracking and logging
 - Data recording and playback (ROS bag support)
 - Synchronized sensor simulation
-
-### System in Action
-
-![RViz2 Visualization](images/rviz_demo.png)
-*Real-time 3D visualization showing point cloud (colored by height), IR sensor cone, and detected objects*
 
 ## Project Structure
 
@@ -28,9 +24,11 @@ infrared_object_detection/
 │   ├── ir_sensor_simulator.py       # IR distance sensor simulation
 │   ├── pointcloud_generator.py      # 3D point cloud generation
 │   ├── object_detector.py           # Sensor fusion and detection (DBSCAN)
+│   ├── object_tracker.py            # Kalman filter tracking
 │   ├── tf_broadcaster.py            # TF transforms for visualization
 │   ├── shared_object_state.py       # Shared state for sensor synchronization
 │   └── metrics_logger.py            # Performance metrics tracking
+│   ├── trajectory_visualizer.py     # Trajectory visualization markers
 ├── notebooks/                 # Jupyter notebooks for analysis (demonstration examples)
 ├── data/                      # Reserved for recorded sensor data (currently empty)
 ├── docs/                      # Reserved for additional documentation (currently empty)
@@ -45,14 +43,16 @@ infrared_object_detection/
 
 ## System Architecture
 
-The system consists of six independent ROS 2 nodes that communicate via topics:
+The system consists of eight independent ROS 2 nodes that communicate via topics:
 
 1. **Shared Object State** - Publishes synchronized object position for all sensors
 2. **IR Sensor Simulator** - Subscribes to object state, publishes distance measurements
 3. **Point Cloud Generator** - Subscribes to object state, creates 3D scenes
 4. **Object Detector** - Fuses sensor streams using DBSCAN clustering
-5. **TF Broadcaster** - Provides coordinate frame transforms
-6. **Metrics Logger** - Tracks and logs detection performance
+5. **Object Tracker** - Tracks objects over time with Kalman filtering (v1.2)
+6. **Trajectory Visualizer** - Displays tracking predictions and history in RViz2 (v1.2)
+7. **TF Broadcaster** - Provides coordinate frame transforms
+8. **Metrics Logger** - Tracks and logs detection performance
 
 ### ROS 2 Topics
 
@@ -60,6 +60,8 @@ The system consists of six independent ROS 2 nodes that communicate via topics:
 - `/ir_sensor/range` (sensor_msgs/Range) - IR distance measurements
 - `/pointcloud/scene` (sensor_msgs/PointCloud2) - 3D point cloud data
 - `/detections/objects` (std_msgs/String) - JSON-formatted detection results
+- `/tracking/objects` (std_msgs/String) - Tracked objects with IDs and velocities (v1.2)
+- `/tracking/visualization` (visualization_msgs/MarkerArray) - Trajectory markers for RViz2 (v1.2)
 
 ## Prerequisites
 
@@ -134,9 +136,31 @@ chmod +x src/*.py
 
 ## Usage
 
-### Quick Start - Running All Nodes
+### Easy Start - Using Launch Script (Recommended)
 
-Open 5 separate terminals in VSCode (or your terminal emulator) and run the following commands:
+**Start all nodes with one command:**
+```bash
+cd ~/infrared_object_detection
+./start_system.sh
+```
+
+This automatically starts all nodes (shared object state, IR sensor, point cloud generator, object detector, object tracker, TF broadcaster, metrics logger).
+
+**Then open RViz2 in a separate terminal:**
+```bash
+cd ~/infrared_object_detection
+source venv/bin/activate
+source /opt/ros/humble/setup.bash
+rviz2
+```
+
+**To stop all nodes:** Press `Ctrl+C` in the terminal running `start_system.sh`
+
+---
+
+### Manual Start - Running Nodes Individually
+
+If you prefer to run nodes separately for debugging:
 
 **Terminal 1 - IR Sensor:**
 ```bash
@@ -202,6 +226,27 @@ Once RViz2 opens:
    - Choose `/ir_sensor/range` → `Range`
    - Expand "Range" and set color to red or yellow for visibility
 
+### Trajectory Visualization (v1.2)
+
+To see tracked object trajectories, predictions, and motion:
+
+1. **Add Trajectory Markers:**
+   - Click "Add" button
+   - Select "By topic" tab
+   - Find `/tracking/visualization`
+   - Click the arrow to expand
+   - Select `MarkerArray`
+   - Click OK
+
+2. **What You'll See:**
+   - **Colored spheres** - Current object positions (color by track ID)
+   - **Velocity arrows** - Direction and speed of movement
+   - **Trajectory trails** - Line showing past 10 positions
+   - **Predicted paths** - Dashed line showing 3-second prediction
+   - **Track ID labels** - "Track #X" text above each object
+
+The visualization updates in real-time as objects move and are tracked.
+
 ### Viewing Detection Results
 
 In any terminal with the environment activated:
@@ -219,6 +264,25 @@ ros2 topic list
 # Check topic details
 ros2 topic info /detections/objects
 ```
+
+### Viewing Tracking Results (v1.2)
+
+View tracked objects with persistent IDs and velocity estimates:
+
+```bash
+# View live tracking data (Ctrl+C to stop)
+ros2 topic echo /tracking/objects
+
+# View single tracking update
+ros2 topic echo /tracking/objects --once
+```
+
+Tracking data includes:
+- Track ID (persistent across frames)
+- Position (X, Y, Z)
+- Velocity (vx, vy, vz)
+- Speed (m/s)
+- Track hits and age
 
 ### Recording and Playing Back Data
 
@@ -259,14 +323,15 @@ The metrics include:
 - Simulates an infrared distance sensor
 - Range: 0.1m to 3.0m
 - Adds Gaussian noise (σ = 2cm) for realism
-- Objects randomly move or disappear for dynamic testing
+- Synchronized with shared object state (v1.1)
 
 **Point Cloud Generator:**
 - Creates 3D scenes with:
   - Ground plane (500 points)
   - Detectable object (200 points)
   - Random noise (50 points)
-- Objects move randomly in the scene
+- Synchronized with shared object state (v1.1)
+- Objects move smoothly with realistic physics (v1.2)
 - Publishes at 5 Hz
 
 ### Object Detection Algorithm
@@ -292,6 +357,27 @@ The detector uses DBSCAN (Density-Based Spatial Clustering) for robust object de
 ### Transform (TF) Broadcasting
 
 The TF broadcaster establishes the coordinate frame relationship between `world` (the global frame) and `ir_sensor_frame` (the sensor's reference frame), allowing RViz2 to correctly visualize sensor data.
+
+### Object Tracking (v1.2)
+
+The tracker uses Kalman filtering to maintain object identity and estimate motion:
+
+**Features:**
+- **Data Association** - Matches new detections to existing tracks
+- **Motion Prediction** - Predicts object position between frames
+- **Velocity Estimation** - Calculates speed and direction
+- **Track Management** - Creates, updates, and deletes tracks
+- **Persistent IDs** - Maintains same ID across frames
+
+**Kalman Filter:**
+- State: [x, y, z, vx, vy, vz] (position + velocity)
+- Constant velocity motion model
+- Handles measurement noise and prediction uncertainty
+
+**Parameters:**
+- Association threshold: 0.5m (max distance to match detection to track)
+- Max missed frames: 5 (delete track after 5 consecutive misses)
+- Min hits: 3 (confirm track after 3 detections)
 
 ## Technical Notes
 
@@ -325,8 +411,10 @@ The metrics logger tracks system performance in real-time:
 - IR Sensor: 10 Hz update rate
 - Point Cloud: 5 Hz update rate
 - Object Detector: 2 Hz processing rate
+- Object Tracker: 2 Hz update rate (v1.2)
 - TF Broadcaster: 10 Hz broadcast rate
 - Metrics Logger: 0.2 Hz (every 5 seconds)
+- Trajectory Visualizer: 2 Hz update rate (v1.2)
 
 ## Troubleshooting
 
@@ -357,9 +445,10 @@ Potential improvements and extensions:
 - [x] DBSCAN clustering algorithm (v1.1)
 - [x] Data recording and playback with ROS bags (v1.1)
 - [x] Performance metrics and logging (v1.1)
-- [ ] Object tracking over time (Kalman filtering)
-- [ ] Multiple simultaneous object detection
-- [ ] Machine learning-based detection
+- [x] Multiple simultaneous object detection (v1.1 - DBSCAN clustering)
+- [x] Object tracking with Kalman filtering (v1.2)
+- [x] Trajectory prediction and visualization (v1.2)
+- [ ] Machine learning-based object classification
 - [ ] Integration with real hardware sensors
 
 ## Documentation
@@ -396,4 +485,4 @@ The AI served as an educational tool and development accelerator. All code has b
 **Author:** Yooh Brito
 **Date:** December 2025  
 **ROS 2 Version:** Humble Hawksbill  
-**Status:** Complete and functional
+**Status:** v1.2 - Object tracking with Kalman filtering and trajectory visualization
