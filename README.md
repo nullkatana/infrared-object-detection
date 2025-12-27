@@ -52,11 +52,15 @@ This project implements a comprehensive ROS 2-based multi-sensor perception syst
 
 *Multi-sensor fusion with weighted confidence scoring*
 
-### Shape Classification and Tracking GIF
-![Detection JSON output](images/tracking_and_tag.gif)
+### Shape Classification and Tracking
+![Object tracking with ML classification](images/tracking_and_tag.gif)
 
-*PointNet-based shape classification and tracking example*
+*Real-time tracking with ML shape classification*
 
+### Object Morphing and Tracking
+![Shape morphing and reappearance](images/morphing_tracking.gif)
+
+*Shape morphing (cone to box) and object reappearance - tracker maintains ID after temporary disappearance*
 
 ## Project Structure
 
@@ -708,6 +712,22 @@ The metrics logger tracks system performance in real-time:
 - Ensure TF broadcaster is running and broadcasting all sensor frames
 - Check topic list with `ros2 topic list` to verify sensors are publishing
 - For ToF: Disable main point cloud temporarily to see 64-point grid clearly
+
+**Import warnings in VSCode (rclpy, torch, sensor_msgs):**
+- ROS 2 and PyTorch packages are installed system-wide, not in venv
+- VSCode Pylance can't find them by default
+- Code runs perfectly - these are just editor warnings
+- To fix: Create `.vscode/settings.json` with:
+```json
+  {
+    "python.analysis.extraPaths": [
+      "/opt/ros/humble/lib/python3.10/site-packages",
+      "/opt/ros/humble/local/lib/python3.10/dist-packages",
+      "${HOME}/.local/lib/python3.10/site-packages"
+    ]
+  }
+```
+- Note: `.vscode/` is gitignored - each user sets their own paths
 
 ## Future Enhancements
 
